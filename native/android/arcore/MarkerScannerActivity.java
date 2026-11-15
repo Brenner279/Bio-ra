@@ -431,11 +431,11 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
             float[] pulmonaryColor = {0.38f, 0.30f, 0.82f, 1f};
 
             drawTube(heartBaseModel, viewMatrix, projectionMatrix,
-                -0.010f, 0.026f, 0.004f, -0.010f, 0.060f, 0.004f, 0.0065f, aortaColor);
+                -0.010f, 0.026f, 0.004f, -0.010f, 0.054f, 0.004f, 0.0065f, aortaColor);
             drawTube(heartBaseModel, viewMatrix, projectionMatrix,
-                -0.010f, 0.060f, 0.004f, 0.012f, 0.062f, 0.004f, 0.0065f, aortaColor);
+                -0.010f, 0.054f, 0.004f, 0.012f, 0.055f, 0.004f, 0.0065f, aortaColor);
             drawTube(heartBaseModel, viewMatrix, projectionMatrix,
-                0.012f, 0.062f, 0.004f, 0.016f, 0.046f, 0.004f, 0.0060f, aortaColor);
+                0.012f, 0.055f, 0.004f, 0.016f, 0.044f, 0.004f, 0.0060f, aortaColor);
 
             drawTube(heartBaseModel, viewMatrix, projectionMatrix,
                 0.023f, -0.005f, -0.002f, 0.023f, 0.052f, -0.002f, 0.0050f, veinColor);
