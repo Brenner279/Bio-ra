@@ -401,6 +401,10 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
             // O modelo nasce alguns milímetros acima da superfície impressa,
             // no eixo normal do marcador, e acompanha sua posição/orientação.
             Matrix.setIdentityM(markerOffset, 0);
+            // Convenção do AugmentedImage: +Y é a normal da imagem e +Z aponta
+            // do topo para a base. Rotacionamos o modelo para ficar em pé sobre o papel:
+            // X do modelo -> X da imagem, Y vertical -> -Z da imagem, Z frontal -> +Y.
+            Matrix.rotateM(markerOffset, 0, -90f, 1f, 0f, 0f);
             Matrix.translateM(markerOffset, 0, 0f, 0f, 0.006f);
             Matrix.multiplyMM(heartBaseModel, 0, markerPose, 0, markerOffset, 0);
 
