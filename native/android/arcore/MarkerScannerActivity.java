@@ -400,14 +400,14 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
             float[] heartBaseModel = new float[16];
             image.getCenterPose().toMatrix(markerPose, 0);
 
-            // O modelo nasce alguns milímetros acima da superfície impressa,
-            // no eixo normal do marcador, e acompanha sua posição/orientação.
+            // O modelo fica totalmente à frente do papel: seu volume tem cerca de
+            // 3,6 cm de profundidade, por isso o centro é deslocado 2,4 cm para fora.
             Matrix.setIdentityM(markerOffset, 0);
             // Convenção do AugmentedImage: +Y é a normal da imagem e +Z aponta
             // do topo para a base. Rotacionamos o modelo para ficar em pé sobre o papel:
             // X do modelo -> X da imagem, Y vertical -> -Z da imagem, Z frontal -> +Y.
             Matrix.rotateM(markerOffset, 0, -90f, 1f, 0f, 0f);
-            Matrix.translateM(markerOffset, 0, 0f, 0f, 0.006f);
+            Matrix.translateM(markerOffset, 0, 0f, 0f, 0.024f);
             Matrix.multiplyMM(heartBaseModel, 0, markerPose, 0, markerOffset, 0);
 
             GLES20.glEnable(GLES20.GL_DEPTH_TEST);
