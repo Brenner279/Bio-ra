@@ -366,6 +366,8 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
                 markerRecognized = true;
                 if (image.getTrackingMethod() == AugmentedImage.TrackingMethod.FULL_TRACKING) {
                     postStatus("MARCADOR A1 RECONHECIDO\nCoração 3D ancorado ao marcador");
+                } else if (image.getTrackingMethod() == AugmentedImage.TrackingMethod.LAST_KNOWN_POSE) {
+                    postStatus("Coração 3D mantido\nAcompanhando a última posição rastreada");
                 } else {
                     postStatus("Coração reconhecido\nAguardando rastreamento completo…");
                 }
@@ -389,7 +391,7 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
         for (AugmentedImage image : session.getAllTrackables(AugmentedImage.class)) {
             if (!MARKER_ID.equals(image.getName())
                     || image.getTrackingState() != TrackingState.TRACKING
-                    || image.getTrackingMethod() != AugmentedImage.TrackingMethod.FULL_TRACKING) {
+                    || image.getTrackingMethod() == AugmentedImage.TrackingMethod.NOT_TRACKING) {
                 continue;
             }
 
