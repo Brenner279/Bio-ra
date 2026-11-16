@@ -21,13 +21,11 @@ O workflow configura a permissão de câmera e remove a permissão de internet d
 
 A narração usa a voz de síntese de fala instalada no Android. O BioAR seleciona somente uma voz marcada pelo sistema como local e em português. Para ouvir sem internet, instale previamente uma voz de português (Brasil) offline nas configurações de Texto para fala do aparelho. Se não houver uma voz local compatível, o BioAR informa isso e não tenta usar uma voz online.
 
-### Realidade aumentada pelo navegador
+### Realidade aumentada no navegador e no APK
 
-No GitHub Pages, o botão **Modo RA** abre o rastreador de imagens MindAR (Three.js). O alvo A1 está compilado em `public/ar-markers/targets.mind`; quando reconhecido, o coração 3D é ancorado à imagem. O acesso exige HTTPS, permissão de câmera e conexão para carregar a biblioteca MindAR pela CDN. Use o Chrome atualizado e a mesma imagem A1 utilizada na compilação do alvo.
+O botão **Modo RA** utiliza o mesmo rastreador de imagens MindAR (Three.js) no Chrome e no aplicativo Android. Os quatro alvos (A1 coração, A2 cérebro, A3 pulmões e A4 sistema digestório) estão compilados em `public/ar-markers/targets.mind`. Ao reconhecer cada marcador, o aplicativo cria o modelo correspondente com os mesmos construtores do Atlas, mantendo aparência, estruturas anatômicas, seleção por toque, pinos e controles de interação.
 
-### Realidade aumentada no APK
-
-O aplicativo Android mantém o caminho nativo com ARCore Augmented Images e o marcador PNG empacotado em `assets/ar_markers/heart-marker.png`. O MindAR web é removido durante a preparação offline; o APK continua sem permissão de internet.
+No GitHub Pages, a biblioteca MindAR é carregada pela CDN e exige HTTPS, permissão de câmera e conexão durante o carregamento. No APK, a biblioteca MindAR e o banco `targets.mind` são empacotados localmente; a câmera funciona sem internet. A renderização de RA do APK passa a usar o mesmo caminho Three.js/MindAR da versão web, em vez do renderizador OpenGL simplificado anterior. O projeto continua incluindo o código ARCore legado, mas ele deixa de ser acionado pelo botão Modo RA.
 
 ## Gerar o APK pelo GitHub
 
