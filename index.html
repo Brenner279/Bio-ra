@@ -113,12 +113,18 @@
             }
         }
 
-        /* Camada de realidade aumentada pelo navegador */
+        /* Camada de RA fica atrás dos controles do Atlas, mas acima da cena comum. */
         #web-ar-layer {
             position: fixed;
             inset: 0;
-            z-index: 80;
+            z-index: 12;
             background: transparent;
+        }
+        body.web-ar-active #canvas-container {
+            visibility: hidden;
+        }
+        body.web-ar-active #ar-background {
+            visibility: hidden;
         }
         #web-ar-container {
             position: absolute;
@@ -143,9 +149,9 @@
         #web-ar-status {
             position: absolute;
             left: 50%;
-            bottom: max(22px, env(safe-area-inset-bottom));
+            top: max(82px, calc(env(safe-area-inset-top) + 76px));
             transform: translateX(-50%);
-            z-index: 85;
+            z-index: 25;
             width: min(92vw, 420px);
             padding: 12px 16px;
             border-radius: 16px;
@@ -161,7 +167,8 @@
             position: absolute;
             top: max(16px, env(safe-area-inset-top));
             right: 16px;
-            z-index: 86;
+            z-index: 40;
+            top: max(76px, calc(env(safe-area-inset-top) + 70px));
             min-height: 44px;
             padding: 8px 14px;
             border-radius: 12px;
@@ -1064,6 +1071,11 @@
             if (isQuizMode) {
                 pickNextQuizQuestion();
             }
+
+            // Ao trocar de órgão no seletor inferior, troca também o modelo preso ao marcador.
+            if (webArStarted && webArAnchor) {
+                buildWebAROrgan(organKey);
+            }
         }
 
         function buildHotspotsDOM() {
@@ -1130,6 +1142,16 @@
                 group.traverse(child => {
                     if (child.isMesh && child.userData.baseColor) {
                         child.material.emissive = isSelected ? new THREE.Color(0x444444) : new THREE.Color(0x000000);
+                    }
+                });
+            });
+
+            // Destaca também a estrutura no modelo que está ancorado ao marcador.
+            webArPartMeshes.forEach(group => {
+                const isSelected = group.userData.partId === partId;
+                group.traverse(child => {
+                    if (child.isMesh && child.userData.baseColor && child.material?.emissive) {
+                        child.material.emissive.set(isSelected ? 0x222222 : 0x000000);
                     }
                 });
             });
@@ -1227,6 +1249,10 @@
         function resetCameraView() {
             targetRotation = { x: 0.15, y: -0.3 };
             currentScale = DEFAULT_ORGAN_SCALE;
+            if (webArOrganClone) {
+                webArOrganClone.rotation.set(0.08, -0.18, 0);
+                webArScale = 0.42;
+            }
         }
 
         // Modo Desafio Quiz
@@ -1334,10 +1360,60 @@
         let webArScale = 0.42;
         let webArPointers = new Map();
         let webArCanvasHandlers = null;
+        let webArAnchor = null;
+        let webArThree = null;
+        let webArPartMeshes = [];
 
         function setWebARStatus(message) {
             const status = document.getElementById('web-ar-status');
             if (status) status.textContent = message;
+        }
+
+        function disposeWebAROrgan() {
+            if (!webArOrganClone) return;
+            webArOrganClone.traverse(object => {
+                if (object.geometry?.dispose) object.geometry.dispose();
+                if (object.material) {
+                    const materials = Array.isArray(object.material) ? object.material : [object.material];
+                    materials.forEach(material => material?.dispose?.());
+                }
+            });
+            webArAnchor?.group?.remove(webArOrganClone);
+            webArOrganClone = null;
+            webArPartMeshes = [];
+        }
+
+        function buildWebAROrgan(organKey) {
+            if (!webArThree || !webArAnchor) return;
+
+            disposeWebAROrgan();
+
+            // O objeto precisa ser construído pela versão Three.js que pertence ao MindAR.
+            const atlasThree = window.THREE;
+            const atlasGradient = toonGradientMap;
+            const atlasParts = partMeshes;
+            try {
+                window.THREE = webArThree;
+                toonGradientMap = createToonGradientMap();
+                partMeshes = [];
+
+                if (organKey === 'heart') webArOrganClone = buildCartoonHeart();
+                else if (organKey === 'brain') webArOrganClone = buildCartoonBrain();
+                else if (organKey === 'lungs') webArOrganClone = buildCartoonLungs();
+                else if (organKey === 'stomach') webArOrganClone = buildCartoonStomach();
+
+                webArPartMeshes = partMeshes.slice();
+            } finally {
+                window.THREE = atlasThree;
+                toonGradientMap = atlasGradient;
+                partMeshes = atlasParts;
+            }
+
+            if (!webArOrganClone) return;
+            webArOrganClone.position.set(0, 0, 0.10);
+            webArOrganClone.rotation.set(0.08, -0.18, 0);
+            webArOrganClone.scale.setScalar(webArScale);
+            webArAnchor.group.add(webArOrganClone);
         }
 
         async function resolveWebARTarget() {
@@ -1391,8 +1467,8 @@
                 document.getElementById('camera-btn-text').innerText = "Usar Câmera Real";
             }
 
-            if (currentOrganKey !== 'heart') selectOrgan('heart');
             layer.classList.remove('hidden');
+            document.body.classList.add('web-ar-active');
             container.innerHTML = '';
             setWebARStatus('Carregando marcador e solicitando acesso à câmera...');
 
@@ -1412,36 +1488,26 @@
                 // MindAR inclui sua própria versão do Three.js. Os objetos da cena
                 // precisam ser construídos com a mesma instância usada pelo renderer.
                 const ARTHREE = window.MINDAR.IMAGE.THREE;
+                webArThree = ARTHREE;
                 const { renderer: arRenderer, scene: arScene, camera: arCamera } = webArInstance;
-                arScene.add(new ARTHREE.HemisphereLight(0xffffff, 0x718096, 1.25));
-                const arKeyLight = new ARTHREE.DirectionalLight(0xffffff, 1.2);
-                arKeyLight.position.set(1, 2, 3);
+
+                // Reproduz a iluminação do Atlas comum para manter a saturação das cores.
+                arRenderer.outputEncoding = ARTHREE.sRGBEncoding;
+                arRenderer.toneMapping = ARTHREE.NoToneMapping;
+                arRenderer.toneMappingExposure = 1;
+                arRenderer.setClearColor(0x000000, 0);
+
+                arScene.add(new ARTHREE.AmbientLight(0xffffff, 0.75));
+                const arKeyLight = new ARTHREE.DirectionalLight(0xffffff, 0.95);
+                arKeyLight.position.set(4, 6, 5);
                 arScene.add(arKeyLight);
+                const arRimLight = new ARTHREE.DirectionalLight(0x38bdf8, 0.4);
+                arRimLight.position.set(-4, -3, -2);
+                arScene.add(arRimLight);
 
-                const anchor = webArInstance.addAnchor(0);
-
-                // Reconstrói o coração com a instância Three.js do MindAR.
-                // Clonar o modelo do Atlas (Three.js r128) para a cena MindAR
-                // (Three.js r136) mistura classes, materiais e texturas incompatíveis.
-                const atlasThree = window.THREE;
-                const atlasGradient = toonGradientMap;
-                const atlasParts = partMeshes;
-                try {
-                    window.THREE = ARTHREE;
-                    toonGradientMap = createToonGradientMap();
-                    partMeshes = [];
-                    webArOrganClone = buildCartoonHeart();
-                } finally {
-                    window.THREE = atlasThree;
-                    toonGradientMap = atlasGradient;
-                    partMeshes = atlasParts;
-                }
-
-                webArOrganClone.position.set(0, 0, 0.10);
-                webArOrganClone.rotation.set(0.08, -0.18, 0);
-                webArScale = 0.42;
-                webArOrganClone.scale.setScalar(webArScale);
-                anchor.group.add(webArOrganClone);
+                webArAnchor = webArInstance.addAnchor(0);
+                if (!webArScale || webArScale === 0.42) webArScale = 0.42;
+                buildWebAROrgan(currentOrganKey);
 
                 anchor.onTargetFound = () => {
                     setWebARStatus('❤️ Coração 3D visível! Arraste para girar e use pinça para ampliar ou reduzir.');
@@ -1523,17 +1589,9 @@
                         const hits = arRaycaster.intersectObjects(webArOrganClone.children, true);
                         const hit = hits.find(item => item.object.userData?.partId);
                         if (hit) {
-                            const part = ORGANS_DATA.heart.parts.find(p => p.id === hit.object.userData.partId);
+                            const part = ORGANS_DATA[currentOrganKey].parts.find(p => p.id === hit.object.userData.partId);
                             if (part) {
-                                selectedPartId = part.id;
-                                updateInfoCard({
-                                    badge: part.number,
-                                    system: ORGANS_DATA.heart.system,
-                                    title: part.name,
-                                    description: part.description,
-                                    funFact: part.funFact,
-                                    color: part.color
-                                });
+                                handlePartSelection(part.id);
                                 setWebARStatus(part.name + ': ' + part.description);
                             }
                         }
@@ -1554,8 +1612,47 @@
                 arRenderer.setAnimationLoop(() => {
                     if (webArOrganClone) {
                         const elapsed = arClock.getElapsedTime();
-                        const beat = isAnimating ? 1 + Math.pow(Math.sin(elapsed * 3.8), 6) * 0.035 : 1;
-                        webArOrganClone.scale.setScalar(webArScale * beat);
+                        let physiologicalPulse = 1;
+                        if (isAnimating) {
+                            if (currentOrganKey === 'heart') {
+                                physiologicalPulse = 1 + Math.pow(Math.sin(elapsed * 3.8), 6) * 0.065;
+                            } else if (currentOrganKey === 'lungs') {
+                                physiologicalPulse = 1 + Math.sin(elapsed * 1.8) * 0.055;
+                            } else if (currentOrganKey === 'brain') {
+                                webArOrganClone.position.y = Math.sin(elapsed * 2.0) * 0.06;
+                            } else if (currentOrganKey === 'stomach') {
+                                physiologicalPulse = 1 + Math.sin(elapsed * 2.5) * 0.035;
+                            }
+                        } else {
+                            webArOrganClone.position.y = 0;
+                        }
+                        webArOrganClone.scale.setScalar(webArScale * physiologicalPulse);
+
+                        // Reaplica a função Separar/Reunir às partes do modelo ancorado.
+                        webArPartMeshes.forEach(group => {
+                            const destination = isExploded
+                                ? group.userData.originPos.clone().add(group.userData.explodeVec)
+                                : group.userData.originPos;
+                            group.position.lerp(destination, 0.1);
+                        });
+
+                        // Os pinos acompanham o órgão na perspectiva da câmera AR.
+                        hotspotsDOM.forEach(hotspot => {
+                            const part = ORGANS_DATA[currentOrganKey].parts.find(p => p.id === hotspot.id);
+                            if (!part) return;
+                            const local = new ARTHREE.Vector3(part.position.x, part.position.y, part.position.z);
+                            if (isExploded) local.add(new ARTHREE.Vector3(
+                                part.explodeVec.x, part.explodeVec.y, part.explodeVec.z
+                            ));
+                            webArOrganClone.localToWorld(local);
+                            local.project(arCamera);
+                            const visible = local.z > -1 && local.z < 1 &&
+                                local.x >= -1.2 && local.x <= 1.2 &&
+                                local.y >= -1.2 && local.y <= 1.2;
+                            hotspot.element.style.display = visible && showHotspots ? '' : 'none';
+                            hotspot.element.style.left = ((local.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+                            hotspot.element.style.top = ((-local.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+                        });
                     }
                     arRenderer.render(arScene, arCamera);
                 });
@@ -1598,9 +1695,16 @@
             }
             webArInstance = null;
             webArOrganClone = null;
+            webArAnchor = null;
+            webArThree = null;
+            webArPartMeshes = [];
             webArStarted = false;
             webArPointers.clear();
             webArScale = 0.42;
+            document.body.classList.remove('web-ar-active');
+            hotspotsDOM.forEach(hotspot => {
+                hotspot.element.style.display = showHotspots ? '' : 'none';
+            });
             document.getElementById('web-ar-container').innerHTML = '';
             document.getElementById('web-ar-layer').classList.add('hidden');
         }
