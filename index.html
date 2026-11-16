@@ -1458,7 +1458,16 @@
                 // pinça para mudar a escala. Isso não altera o Atlas 3D de fundo.
                 const arCanvas = arRenderer.domElement;
                 arCanvas.style.touchAction = 'none';
+                arCanvas.style.pointerEvents = 'auto';
+                arCanvas.style.zIndex = '1';
+                if (webArInstance.cssRenderer?.domElement) {
+                    webArInstance.cssRenderer.domElement.style.pointerEvents = 'none';
+                    webArInstance.cssRenderer.domElement.style.zIndex = '2';
+                }
                 webArPointers.clear();
+                const arPointerStarts = new Map();
+                const arRaycaster = new ARTHREE.Raycaster();
+                const arPointer = new ARTHREE.Vector2();
                 let arPreviousPoint = null;
                 let arPinchStartDistance = 0;
                 let arPinchStartScale = webArScale;
@@ -1467,6 +1476,7 @@
                     event.preventDefault();
                     arCanvas.setPointerCapture?.(event.pointerId);
                     webArPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    arPointerStarts.set(event.pointerId, { x: event.clientX, y: event.clientY });
                     if (webArPointers.size === 2) {
                         const pts = Array.from(webArPointers.values());
                         arPinchStartDistance = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
@@ -1493,8 +1503,42 @@
                     arPreviousPoint = { x: event.clientX, y: event.clientY };
                 };
                 const arPointerUp = (event) => {
+                    const startPoint = arPointerStarts.get(event.pointerId);
+                    const moveDistance = startPoint
+                        ? Math.hypot(event.clientX - startPoint.x, event.clientY - startPoint.y)
+                        : Infinity;
+                    const wasSinglePointer = webArPointers.size === 1;
                     webArPointers.delete(event.pointerId);
+                    arPointerStarts.delete(event.pointerId);
                     arPreviousPoint = null;
+
+                    // Toque curto seleciona a estrutura anatômica tocada.
+                    if (wasSinglePointer && moveDistance < 9 && webArOrganClone) {
+                        const rect = arCanvas.getBoundingClientRect();
+                        arPointer.set(
+                            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                            -(((event.clientY - rect.top) / rect.height) * 2 - 1)
+                        );
+                        arRaycaster.setFromCamera(arPointer, arCamera);
+                        const hits = arRaycaster.intersectObjects(webArOrganClone.children, true);
+                        const hit = hits.find(item => item.object.userData?.partId);
+                        if (hit) {
+                            const part = ORGANS_DATA.heart.parts.find(p => p.id === hit.object.userData.partId);
+                            if (part) {
+                                selectedPartId = part.id;
+                                updateInfoCard({
+                                    badge: part.number,
+                                    system: ORGANS_DATA.heart.system,
+                                    title: part.name,
+                                    description: part.description,
+                                    funFact: part.funFact,
+                                    color: part.color
+                                });
+                                setWebARStatus(part.name + ': ' + part.description);
+                            }
+                        }
+                    }
+
                     if (webArPointers.size === 1) {
                         const remaining = Array.from(webArPointers.values())[0];
                         arPreviousPoint = { x: remaining.x, y: remaining.y };
