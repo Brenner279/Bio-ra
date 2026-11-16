@@ -234,7 +234,7 @@
 
         <!-- Botões de Ação Rápida no Topo -->
         <div class="flex items-center gap-2">
-            <!-- Scanner nativo ARCore -->
+            <!-- Scanner compartilhado MindAR (navegador e APK offline) -->
             <button id="btn-arcore" onclick="startMarkerScanner()" class="cartoon-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm" title="Abrir ou fechar realidade aumentada pelos quatro marcadores">
                 <i class="ph-bold ph-scan text-lg"></i>
                 <span class="hidden sm:inline">Modo RA</span>
@@ -1498,7 +1498,7 @@
                     system: "RA pelo navegador",
                     title: "A câmera exige conexão segura",
                     description: "Abra o BioAR pelo endereço HTTPS do GitHub Pages usando o Chrome atualizado. O navegador não libera a câmera em páginas HTTP comuns.",
-                    funFact: "A versão APK continua utilizando o scanner nativo ARCore.",
+                    funFact: "No APK, a câmera é acessada pelo WebView usando os arquivos MindAR incluídos no aplicativo.",
                     color: "#f59e0b"
                 });
                 return;
@@ -1732,7 +1732,7 @@
                     system: "RA pelo navegador",
                     title: "Não foi possível iniciar a realidade aumentada",
                     description: error?.message || "Verifique a permissão da câmera, a conexão HTTPS e se o banco com os quatro marcadores targets.mind está publicado em public/ar-markers.",
-                    funFact: "O Atlas 3D continua disponível. No APK, a modalidade nativa continua independente.",
+                    funFact: "O Atlas 3D continua disponível. No APK, o mesmo rastreador e os mesmos modelos são usados sem internet.",
                     color: "#f59e0b"
                 });
             }
