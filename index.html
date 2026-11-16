@@ -1705,7 +1705,8 @@
                             ));
                             webArOrganClone.localToWorld(local);
                             local.project(arCamera);
-                            const visible = local.z > -1 && local.z < 1 &&
+                            const visible = webArTargetVisible &&
+                                local.z > -1 && local.z < 1 &&
                                 local.x >= -1.2 && local.x <= 1.2 &&
                                 local.y >= -1.2 && local.y <= 1.2;
                             hotspot.element.style.display = visible && showHotspots ? '' : 'none';
