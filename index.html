@@ -1509,10 +1509,10 @@
                 if (!webArScale || webArScale === 0.42) webArScale = 0.42;
                 buildWebAROrgan(currentOrganKey);
 
-                anchor.onTargetFound = () => {
-                    setWebARStatus('❤️ Coração 3D visível! Arraste para girar e use pinça para ampliar ou reduzir.');
+                webArAnchor.onTargetFound = () => {
+                    setWebARStatus('✅ ' + ORGANS_DATA[currentOrganKey].name + ' 3D visível! Use os controles do Atlas, arraste para girar e faça pinça para ampliar.');
                 };
-                anchor.onTargetLost = () => {
+                webArAnchor.onTargetLost = () => {
                     setWebARStatus('Marcador fora da câmera. Reposicione o A1 para continuar a interação.');
                 };
 
