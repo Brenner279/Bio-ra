@@ -73,12 +73,15 @@ jobs:
       - name: Build local web assets
         run: npm run build
 
-      - name: Verify offline web bundle
+      - name: Verify offline web bundle and AR assets
         run: |
-          if grep -R -E 'cdn\.tailwindcss\.com|cdnjs\.cloudflare\.com/ajax/libs/three|unpkg\.com/@phosphor-icons/web|fonts\.googleapis\.com' dist; then
+          if grep -R -E 'cdn\.tailwindcss\.com|cdnjs\.cloudflare\.com/ajax/libs/three|cdn\.jsdelivr\.net/npm/mind-ar|unpkg\.com/@phosphor-icons/web|fonts\.googleapis\.com' dist; then
             echo 'Uma dependência externa foi encontrada no bundle offline.'
             exit 1
           fi
+          test -s dist/vendor/three.min.js
+          test -s dist/vendor/mindar-image-three.prod.js
+          test -s dist/ar-markers/targets.mind
 
       - name: Create Android project
         run: npx cap add android
