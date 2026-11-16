@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js para Gráficos 3D -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Rastreamento de imagens para RA no navegador (Three.js legado compatível com o Atlas) -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.5/dist/mindar-image-three.prod.js"></script>
     <!-- Ícones Phosphor -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <!-- Google Fonts: Nunito (amigável e arredondada para estilo educativo) -->
@@ -109,6 +111,60 @@
             #info-card:not(.info-card-compact) #info-details {
                 max-height: 20vh;
             }
+        }
+
+        /* Camada de realidade aumentada pelo navegador */
+        #web-ar-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 80;
+            background: #020617;
+        }
+        #web-ar-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #web-ar-container video,
+        #web-ar-container canvas {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+        }
+        #web-ar-status {
+            position: absolute;
+            left: 50%;
+            bottom: max(22px, env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            z-index: 85;
+            width: min(92vw, 420px);
+            padding: 12px 16px;
+            border-radius: 16px;
+            background: rgba(15, 23, 42, .88);
+            border: 1px solid rgba(255,255,255,.2);
+            color: white;
+            text-align: center;
+            font-weight: 800;
+            box-shadow: 0 8px 30px rgba(0,0,0,.3);
+            pointer-events: none;
+        }
+        #web-ar-close {
+            position: absolute;
+            top: max(16px, env(safe-area-inset-top));
+            right: 16px;
+            z-index: 86;
+            min-height: 44px;
+            padding: 8px 14px;
+            border-radius: 12px;
+            background: #fff;
+            color: #0f172a;
+            border: 2px solid #0f172a;
+            box-shadow: 0 4px 0 #0f172a;
+            font-weight: 900;
         }
     </style>
 </head>
@@ -359,6 +415,13 @@
             </div>
         </div>
     </div>
+
+    <!-- RA WEB: scanner de imagem executado diretamente no navegador -->
+    <section id="web-ar-layer" class="hidden" aria-label="Realidade aumentada pelo navegador">
+        <div id="web-ar-container"></div>
+        <button id="web-ar-close" type="button" onclick="stopWebMarkerScanner()">✕ Fechar RA</button>
+        <div id="web-ar-status">Iniciando câmera. Aponte para o marcador A1.</div>
+    </section>
 
     <script>
         /********************************************************************
@@ -1258,19 +1321,166 @@
             synth.speak(utterance);
         }
 
-        // Ativar Câmera Real WebRTC para experiência RA
+        // Estado da realidade aumentada executada diretamente no navegador.
         let mediaStream = null;
+        let webArInstance = null;
+        let webArOrganClone = null;
+        let webArStarted = false;
+
+        function setWebARStatus(message) {
+            const status = document.getElementById('web-ar-status');
+            if (status) status.textContent = message;
+        }
+
+        async function resolveWebARTarget() {
+            // GitHub Pages com publicação da raiz e builds que copiam a pasta public.
+            const candidates = [
+                new URL('./public/ar-markers/targets.mind', window.location.href).href,
+                new URL('./ar-markers/targets.mind', window.location.href).href
+            ];
+            for (const url of candidates) {
+                try {
+                    const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+                    if (response.ok) return url;
+                } catch (error) {
+                    console.debug('Não foi possível verificar o alvo MindAR:', url, error);
+                }
+            }
+            throw new Error('O arquivo public/ar-markers/targets.mind não foi encontrado no site publicado.');
+        }
+
+        async function startWebMarkerScanner() {
+            const layer = document.getElementById('web-ar-layer');
+            const container = document.getElementById('web-ar-container');
+
+            if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+                updateInfoCard({
+                    badge: "📷",
+                    system: "RA pelo navegador",
+                    title: "A câmera exige conexão segura",
+                    description: "Abra o BioAR pelo endereço HTTPS do GitHub Pages usando o Chrome atualizado. O navegador não libera a câmera em páginas HTTP comuns.",
+                    funFact: "A versão APK continua utilizando o scanner nativo ARCore.",
+                    color: "#f59e0b"
+                });
+                return;
+            }
+            if (!window.MINDAR?.IMAGE?.MindARThree) {
+                updateInfoCard({
+                    badge: "⚠️",
+                    system: "RA pelo navegador",
+                    title: "Biblioteca de rastreamento indisponível",
+                    description: "Não foi possível carregar o MindAR. Confira a conexão com a internet e tente novamente.",
+                    funFact: "A versão web carrega a biblioteca MindAR pela CDN; o Atlas 3D continua disponível.",
+                    color: "#f59e0b"
+                });
+                return;
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+                document.getElementById('camera-stream').classList.add('hidden');
+                document.getElementById('camera-btn-text').innerText = "Usar Câmera Real";
+            }
+
+            if (currentOrganKey !== 'heart') selectOrgan('heart');
+            layer.classList.remove('hidden');
+            container.innerHTML = '';
+            setWebARStatus('Carregando marcador e solicitando acesso à câmera...');
+
+            try {
+                const targetUrl = await resolveWebARTarget();
+                webArInstance = new window.MINDAR.IMAGE.MindARThree({
+                    container,
+                    imageTargetSrc: targetUrl,
+                    uiLoading: 'no',
+                    uiScanning: 'no',
+                    uiError: 'no',
+                    maxTrack: 1,
+                    filterMinCF: 0.0001,
+                    filterBeta: 1000
+                });
+
+                const { renderer: arRenderer, scene: arScene, camera: arCamera } = webArInstance;
+                arScene.add(new THREE.HemisphereLight(0xffffff, 0x718096, 1.25));
+                const arKeyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+                arKeyLight.position.set(1, 2, 3);
+                arScene.add(arKeyLight);
+
+                const anchor = webArInstance.addAnchor(0);
+                webArOrganClone = organGroup.clone(true);
+                webArOrganClone.position.set(0, 0, 0.08);
+                webArOrganClone.rotation.set(0.12, -0.25, 0);
+                webArOrganClone.scale.setScalar(0.30);
+                anchor.group.add(webArOrganClone);
+
+                anchor.onTargetFound = () => {
+                    setWebARStatus('❤️ Marcador A1 reconhecido! O coração está ancorado à imagem.');
+                };
+                anchor.onTargetLost = () => {
+                    setWebARStatus('Marcador não está visível. Aponte novamente a câmera para o A1.');
+                };
+
+                await webArInstance.start();
+                webArStarted = true;
+                setWebARStatus('Câmera ativa. Aponte para o marcador A1 impresso em 14 × 14 cm.');
+
+                const arClock = new THREE.Clock();
+                arRenderer.setAnimationLoop(() => {
+                    if (webArOrganClone) {
+                        const elapsed = arClock.getElapsedTime();
+                        const beat = isAnimating ? 1 + Math.pow(Math.sin(elapsed * 3.8), 6) * 0.045 : 1;
+                        webArOrganClone.scale.setScalar(0.30 * beat);
+                    }
+                    arRenderer.render(arScene, arCamera);
+                });
+            } catch (error) {
+                console.error('Falha ao iniciar RA pelo navegador:', error);
+                await stopWebMarkerScanner();
+                updateInfoCard({
+                    badge: "⚠️",
+                    system: "RA pelo navegador",
+                    title: "Não foi possível iniciar a realidade aumentada",
+                    description: error?.message || "Verifique a permissão da câmera, a conexão HTTPS e se o arquivo targets.mind está publicado em public/ar-markers.",
+                    funFact: "O Atlas 3D continua disponível. No APK, a modalidade nativa continua independente.",
+                    color: "#f59e0b"
+                });
+            }
+        }
+
+        async function stopWebMarkerScanner() {
+            if (webArInstance) {
+                try {
+                    webArInstance.renderer.setAnimationLoop(null);
+                    if (webArStarted) await webArInstance.stop();
+                } catch (error) {
+                    console.warn('Falha ao encerrar a sessão MindAR:', error);
+                }
+            }
+            webArInstance = null;
+            webArOrganClone = null;
+            webArStarted = false;
+            document.getElementById('web-ar-container').innerHTML = '';
+            document.getElementById('web-ar-layer').classList.add('hidden');
+        }
 
         async function startMarkerScanner() {
             const nativePlugin = window.Capacitor?.Plugins?.BioARCore;
-            if (!nativePlugin || (window.Capacitor?.isNativePlatform && !window.Capacitor.isNativePlatform())) {
+            const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
+
+            // No Chrome/GitHub Pages, o marcador é rastreado pelo MindAR.
+            if (!isNativeApp) {
+                await startWebMarkerScanner();
+                return;
+            }
+            if (!nativePlugin?.startMarkerScanner) {
                 updateInfoCard({
-                    badge: "📷",
+                    badge: "⚠️",
                     system: "Realidade Aumentada • ARCore",
-                    title: "Scanner no APK Android",
-                    description: "O reconhecimento do marcador A1 funciona na versão Android com ARCore. O Atlas 3D permanece disponível nesta versão web.",
-                    funFact: "Esta primeira etapa valida a leitura da imagem; a ancoragem do órgão 3D será ligada na próxima etapa.",
-                    color: "#10b981"
+                    title: "Scanner nativo indisponível",
+                    description: "Este APK não encontrou o plugin ARCore. Atualize para a compilação Android mais recente.",
+                    funFact: "O modo RA pelo navegador é independente e funciona pelo GitHub Pages.",
+                    color: "#f59e0b"
                 });
                 return;
             }
