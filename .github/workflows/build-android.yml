@@ -112,8 +112,12 @@ jobs:
             echo "O APK ainda declara permissão de internet."
             exit 1
           fi
-          if ! unzip -l "$APK" | grep -q "assets/ar_markers/heart-marker.png"; then
-            echo "O marcador offline do coração não foi incluído no APK."
+          if ! unzip -l "$APK" | grep -q "assets/public/ar-markers/targets.mind"; then
+            echo "O banco MindAR com os quatro marcadores não foi incluído no APK."
+            exit 1
+          fi
+          if ! unzip -l "$APK" | grep -q "assets/public/vendor/mindar-image-three.prod.js"; then
+            echo "A biblioteca MindAR offline não foi incluída no APK."
             exit 1
           fi
 
