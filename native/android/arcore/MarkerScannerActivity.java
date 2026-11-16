@@ -27,6 +27,7 @@ import com.google.ar.core.exceptions.CameraNotAvailableException;
 import com.google.ar.core.Config;
 import com.google.ar.core.Coordinates2d;
 import com.google.ar.core.Frame;
+import com.google.ar.core.Pose;
 import com.google.ar.core.Session;
 import com.google.ar.core.TrackingState;
 import com.google.ar.core.exceptions.UnavailableException;
@@ -56,6 +57,12 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
     private volatile boolean viewportChanged = true;
     private volatile String statusOnScreen = "";
     private volatile boolean markerRecognized;
+
+    // Filtro temporal de pose para reduzir pequenas oscilações do rastreamento ARCore.
+    private float[] smoothedMarkerTranslation;
+    private float[] smoothedMarkerRotation;
+    private long lastPoseTimestampNs = 0L;
+    private static final float POSE_SMOOTHING_TIME_SECONDS = 0.085f;
 
     private int surfaceWidth;
     private int surfaceHeight;
@@ -274,6 +281,7 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
     }
 
     private void closeSession() {
+        resetMarkerPoseFilter();
         sessionResumed = false;
         if (session != null) {
             session.close();
@@ -379,6 +387,77 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
         }
     }
 
+    /**
+     * Suaviza a posição e a rotação da imagem reconhecida.
+     * O fator depende do intervalo real entre frames para manter comportamento
+     * consistente em diferentes taxas de atualização do aparelho.
+     */
+    private Pose smoothMarkerPose(Pose measuredPose, long timestampNs) {
+        float[] measuredTranslation = measuredPose.getTranslation();
+        float[] measuredRotation = measuredPose.getRotationQuaternion();
+
+        if (smoothedMarkerTranslation == null || smoothedMarkerRotation == null
+                || lastPoseTimestampNs == 0L || timestampNs <= lastPoseTimestampNs
+                || timestampNs - lastPoseTimestampNs > 500_000_000L) {
+            smoothedMarkerTranslation = measuredTranslation.clone();
+            smoothedMarkerRotation = measuredRotation.clone();
+            lastPoseTimestampNs = timestampNs;
+            return measuredPose;
+        }
+
+        float deltaSeconds = (timestampNs - lastPoseTimestampNs) / 1_000_000_000f;
+        lastPoseTimestampNs = timestampNs;
+        float alpha = 1f - (float) Math.exp(-deltaSeconds / POSE_SMOOTHING_TIME_SECONDS);
+        alpha = Math.max(0.08f, Math.min(0.85f, alpha));
+
+        for (int i = 0; i < 3; i++) {
+            smoothedMarkerTranslation[i] +=
+                alpha * (measuredTranslation[i] - smoothedMarkerTranslation[i]);
+        }
+        slerpQuaternion(smoothedMarkerRotation, measuredRotation, alpha);
+
+        return new Pose(smoothedMarkerTranslation, smoothedMarkerRotation);
+    }
+
+    private void slerpQuaternion(float[] current, float[] target, float amount) {
+        float dot = current[0] * target[0] + current[1] * target[1]
+            + current[2] * target[2] + current[3] * target[3];
+        float[] adjustedTarget = target.clone();
+
+        // q e -q representam a mesma rotação; escolhe o caminho mais curto.
+        if (dot < 0f) {
+            dot = -dot;
+            for (int i = 0; i < 4; i++) adjustedTarget[i] = -adjustedTarget[i];
+        }
+
+        dot = Math.max(-1f, Math.min(1f, dot));
+        float scaleCurrent;
+        float scaleTarget;
+        if (dot > 0.9995f) {
+            scaleCurrent = 1f - amount;
+            scaleTarget = amount;
+        } else {
+            double theta = Math.acos(dot);
+            double sinTheta = Math.sin(theta);
+            scaleCurrent = (float) (Math.sin((1f - amount) * theta) / sinTheta);
+            scaleTarget = (float) (Math.sin(amount * theta) / sinTheta);
+        }
+
+        float lengthSquared = 0f;
+        for (int i = 0; i < 4; i++) {
+            current[i] = scaleCurrent * current[i] + scaleTarget * adjustedTarget[i];
+            lengthSquared += current[i] * current[i];
+        }
+        float inverseLength = 1f / (float) Math.sqrt(Math.max(lengthSquared, 0.000001f));
+        for (int i = 0; i < 4; i++) current[i] *= inverseLength;
+    }
+
+    private void resetMarkerPoseFilter() {
+        smoothedMarkerTranslation = null;
+        smoothedMarkerRotation = null;
+        lastPoseTimestampNs = 0L;
+    }
+
     private void drawTrackedHeart(Frame frame) {
         if (heartProgram == 0 || heartBodyMesh == null || sphereMesh == null) return;
 
@@ -398,7 +477,8 @@ public final class MarkerScannerActivity extends Activity implements GLSurfaceVi
             float[] markerPose = new float[16];
             float[] markerOffset = new float[16];
             float[] heartBaseModel = new float[16];
-            image.getCenterPose().toMatrix(markerPose, 0);
+            Pose stablePose = smoothMarkerPose(image.getCenterPose(), frame.getTimestamp());
+            stablePose.toMatrix(markerPose, 0);
 
             // O modelo fica totalmente à frente do papel: seu volume tem cerca de
             // 3,6 cm de profundidade, por isso o centro é deslocado 2,4 cm para fora.
