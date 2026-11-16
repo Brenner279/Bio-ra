@@ -236,7 +236,7 @@
         <!-- Botões de Ação Rápida no Topo -->
         <div class="flex items-center gap-2">
             <!-- Scanner nativo ARCore -->
-            <button id="btn-arcore" onclick="startMarkerScanner()" class="cartoon-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm" title="Reconhecer o marcador do coração com ARCore">
+            <button id="btn-arcore" onclick="startMarkerScanner()" class="cartoon-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm" title="Abrir ou fechar realidade aumentada pelo marcador">
                 <i class="ph-bold ph-scan text-lg"></i>
                 <span class="hidden sm:inline">Modo RA</span>
             </button>
@@ -1713,6 +1713,12 @@
             const nativePlugin = window.Capacitor?.Plugins?.BioARCore;
             const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
 
+            // O botão funciona como alternância para abrir/fechar a sessão web.
+            if (!isNativeApp && webArStarted) {
+                await stopWebMarkerScanner();
+                return;
+            }
+
             // No Chrome/GitHub Pages, o marcador é rastreado pelo MindAR.
             if (!isNativeApp) {
                 await startWebMarkerScanner();
@@ -1774,6 +1780,12 @@
         async function toggleCamera() {
             const videoEl = document.getElementById('camera-stream');
             const btnText = document.getElementById('camera-btn-text');
+
+            // Evita abrir dois fluxos simultâneos da câmera no mesmo navegador.
+            if (webArStarted) {
+                await stopWebMarkerScanner();
+                return;
+            }
 
             if (mediaStream) {
                 mediaStream.getTracks().forEach(track => track.stop());
