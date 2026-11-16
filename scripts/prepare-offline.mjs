@@ -11,6 +11,8 @@ const onlineResources = `    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Three.js para Gráficos 3D -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- MindAR é exclusivo do navegador; o APK usa o scanner ARCore nativo -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.1.5/dist/mindar-image-three.prod.js"></script>
     <!-- Ícones Phosphor -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <!-- Google Fonts: Nunito (amigável e arredondada para estilo educativo) -->
