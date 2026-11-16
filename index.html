@@ -165,10 +165,9 @@
         }
         #web-ar-close {
             position: absolute;
-            top: max(16px, env(safe-area-inset-top));
+            top: max(76px, calc(env(safe-area-inset-top) + 70px));
             right: 16px;
             z-index: 40;
-            top: max(76px, calc(env(safe-area-inset-top) + 70px));
             min-height: 44px;
             padding: 8px 14px;
             border-radius: 12px;
@@ -1075,6 +1074,7 @@
             // Ao trocar de órgão no seletor inferior, troca também o modelo preso ao marcador.
             if (webArStarted && webArAnchor) {
                 buildWebAROrgan(organKey);
+                setWebARStatus('Exibindo ' + data.name + ' no marcador A1. Use os controles do Atlas para interagir.');
             }
         }
 
@@ -1681,6 +1681,7 @@
             }
             if (webArInstance) {
                 try {
+                    disposeWebAROrgan();
                     webArInstance.renderer?.setAnimationLoop(null);
                     if (webArInstance.controller) webArInstance.stop();
                 } catch (error) {
