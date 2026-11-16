@@ -1331,6 +1331,9 @@
         let webArInstance = null;
         let webArOrganClone = null;
         let webArStarted = false;
+        let webArScale = 0.42;
+        let webArPointers = new Map();
+        let webArCanvasHandlers = null;
 
         function setWebARStatus(message) {
             const status = document.getElementById('web-ar-status');
@@ -1406,36 +1409,109 @@
                     filterBeta: 1000
                 });
 
+                // MindAR inclui sua própria versão do Three.js. Os objetos da cena
+                // precisam ser construídos com a mesma instância usada pelo renderer.
+                const ARTHREE = window.MINDAR.IMAGE.THREE;
                 const { renderer: arRenderer, scene: arScene, camera: arCamera } = webArInstance;
-                arScene.add(new THREE.HemisphereLight(0xffffff, 0x718096, 1.25));
-                const arKeyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+                arScene.add(new ARTHREE.HemisphereLight(0xffffff, 0x718096, 1.25));
+                const arKeyLight = new ARTHREE.DirectionalLight(0xffffff, 1.2);
                 arKeyLight.position.set(1, 2, 3);
                 arScene.add(arKeyLight);
 
                 const anchor = webArInstance.addAnchor(0);
-                webArOrganClone = organGroup.clone(true);
-                webArOrganClone.position.set(0, 0, 0.08);
-                webArOrganClone.rotation.set(0.12, -0.25, 0);
-                webArOrganClone.scale.setScalar(0.30);
+
+                // Reconstrói o coração com a instância Three.js do MindAR.
+                // Clonar o modelo do Atlas (Three.js r128) para a cena MindAR
+                // (Three.js r136) mistura classes, materiais e texturas incompatíveis.
+                const atlasThree = window.THREE;
+                const atlasGradient = toonGradientMap;
+                const atlasParts = partMeshes;
+                try {
+                    window.THREE = ARTHREE;
+                    toonGradientMap = createToonGradientMap();
+                    partMeshes = [];
+                    webArOrganClone = buildCartoonHeart();
+                } finally {
+                    window.THREE = atlasThree;
+                    toonGradientMap = atlasGradient;
+                    partMeshes = atlasParts;
+                }
+
+                webArOrganClone.position.set(0, 0, 0.10);
+                webArOrganClone.rotation.set(0.08, -0.18, 0);
+                webArScale = 0.42;
+                webArOrganClone.scale.setScalar(webArScale);
                 anchor.group.add(webArOrganClone);
 
                 anchor.onTargetFound = () => {
-                    setWebARStatus('❤️ Marcador A1 reconhecido! O coração está ancorado à imagem.');
+                    setWebARStatus('❤️ Coração 3D visível! Arraste para girar e use pinça para ampliar ou reduzir.');
                 };
                 anchor.onTargetLost = () => {
-                    setWebARStatus('Marcador não está visível. Aponte novamente a câmera para o A1.');
+                    setWebARStatus('Marcador fora da câmera. Reposicione o A1 para continuar a interação.');
                 };
 
                 await webArInstance.start();
                 webArStarted = true;
                 setWebARStatus('Câmera ativa. Aponte para o marcador A1 impresso em 14 × 14 cm.');
 
-                const arClock = new THREE.Clock();
+                // Interação direta com o modelo ancorado: arraste para girar,
+                // pinça para mudar a escala. Isso não altera o Atlas 3D de fundo.
+                const arCanvas = arRenderer.domElement;
+                arCanvas.style.touchAction = 'none';
+                webArPointers.clear();
+                let arPreviousPoint = null;
+                let arPinchStartDistance = 0;
+                let arPinchStartScale = webArScale;
+
+                const arPointerDown = (event) => {
+                    event.preventDefault();
+                    arCanvas.setPointerCapture?.(event.pointerId);
+                    webArPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (webArPointers.size === 2) {
+                        const pts = Array.from(webArPointers.values());
+                        arPinchStartDistance = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
+                        arPinchStartScale = webArScale;
+                        arPreviousPoint = null;
+                    } else {
+                        arPreviousPoint = { x: event.clientX, y: event.clientY };
+                    }
+                };
+                const arPointerMove = (event) => {
+                    if (!webArPointers.has(event.pointerId) || !webArOrganClone) return;
+                    webArPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (webArPointers.size >= 2) {
+                        const pts = Array.from(webArPointers.values());
+                        const distance = Math.max(1, Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y));
+                        webArScale = Math.max(0.18, Math.min(0.78, arPinchStartScale * distance / arPinchStartDistance));
+                        return;
+                    }
+                    if (arPreviousPoint) {
+                        webArOrganClone.rotation.y += (event.clientX - arPreviousPoint.x) * 0.009;
+                        webArOrganClone.rotation.x = Math.max(-1.1, Math.min(1.1,
+                            webArOrganClone.rotation.x + (event.clientY - arPreviousPoint.y) * 0.009));
+                    }
+                    arPreviousPoint = { x: event.clientX, y: event.clientY };
+                };
+                const arPointerUp = (event) => {
+                    webArPointers.delete(event.pointerId);
+                    arPreviousPoint = null;
+                    if (webArPointers.size === 1) {
+                        const remaining = Array.from(webArPointers.values())[0];
+                        arPreviousPoint = { x: remaining.x, y: remaining.y };
+                    }
+                };
+                arCanvas.addEventListener('pointerdown', arPointerDown);
+                arCanvas.addEventListener('pointermove', arPointerMove);
+                arCanvas.addEventListener('pointerup', arPointerUp);
+                arCanvas.addEventListener('pointercancel', arPointerUp);
+                webArCanvasHandlers = { arCanvas, arPointerDown, arPointerMove, arPointerUp };
+
+                const arClock = new ARTHREE.Clock();
                 arRenderer.setAnimationLoop(() => {
                     if (webArOrganClone) {
                         const elapsed = arClock.getElapsedTime();
-                        const beat = isAnimating ? 1 + Math.pow(Math.sin(elapsed * 3.8), 6) * 0.045 : 1;
-                        webArOrganClone.scale.setScalar(0.30 * beat);
+                        const beat = isAnimating ? 1 + Math.pow(Math.sin(elapsed * 3.8), 6) * 0.035 : 1;
+                        webArOrganClone.scale.setScalar(webArScale * beat);
                     }
                     arRenderer.render(arScene, arCamera);
                 });
@@ -1454,6 +1530,14 @@
         }
 
         async function stopWebMarkerScanner() {
+            if (webArCanvasHandlers) {
+                const { arCanvas, arPointerDown, arPointerMove, arPointerUp } = webArCanvasHandlers;
+                arCanvas.removeEventListener('pointerdown', arPointerDown);
+                arCanvas.removeEventListener('pointermove', arPointerMove);
+                arCanvas.removeEventListener('pointerup', arPointerUp);
+                arCanvas.removeEventListener('pointercancel', arPointerUp);
+                webArCanvasHandlers = null;
+            }
             if (webArInstance) {
                 try {
                     webArInstance.renderer?.setAnimationLoop(null);
@@ -1461,7 +1545,6 @@
                 } catch (error) {
                     console.warn('Falha ao encerrar a sessão MindAR:', error);
                 } finally {
-                    // Também encerra a câmera caso o scanner falhe durante a inicialização.
                     const tracks = webArInstance.video?.srcObject?.getTracks?.() || [];
                     tracks.forEach(track => track.stop());
                     webArInstance.video?.remove();
@@ -1472,6 +1555,8 @@
             webArInstance = null;
             webArOrganClone = null;
             webArStarted = false;
+            webArPointers.clear();
+            webArScale = 0.42;
             document.getElementById('web-ar-container').innerHTML = '';
             document.getElementById('web-ar-layer').classList.add('hidden');
         }
