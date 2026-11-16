@@ -1071,10 +1071,14 @@
                 pickNextQuizQuestion();
             }
 
-            // Ao trocar de órgão no seletor inferior, troca também o modelo preso ao marcador.
-            if (webArStarted && webArAnchor) {
+            // Se uma âncora já foi reconhecida, o seletor também pode trocar o modelo nela.
+            // A próxima imagem identificada volta a selecionar automaticamente seu órgão correspondente.
+            if (webArInstance && webArAnchor) {
                 buildWebAROrgan(organKey);
-                setWebARStatus('Exibindo ' + data.name + ' no marcador A1. Use os controles do Atlas para interagir.');
+                const activeTarget = WEB_AR_TARGETS.find(target => target.key === webArActiveTargetKey);
+                const markerLabel = activeTarget ? activeTarget.marker : 'reconhecido';
+                setWebARStatus('Exibindo ' + data.name + ' na posição do marcador ' + markerLabel +
+                    '. Aponte para outro marcador para trocar automaticamente de sistema.');
             }
         }
 
@@ -1361,8 +1365,19 @@
         let webArPointers = new Map();
         let webArCanvasHandlers = null;
         let webArAnchor = null;
+        let webArAnchors = {};
+        let webArActiveTargetKey = null;
+        let webArTargetVisible = false;
         let webArThree = null;
         let webArPartMeshes = [];
+
+        // A ordem precisa corresponder à ordem usada na compilação do targets.mind.
+        const WEB_AR_TARGETS = [
+            { index: 0, key: 'heart', marker: 'A1', name: 'Coração' },
+            { index: 1, key: 'brain', marker: 'A2', name: 'Cérebro' },
+            { index: 2, key: 'lungs', marker: 'A3', name: 'Pulmões' },
+            { index: 3, key: 'stomach', marker: 'A4', name: 'Sistema digestório' }
+        ];
 
         function setWebARStatus(message) {
             const status = document.getElementById('web-ar-status');
@@ -1370,15 +1385,16 @@
         }
 
         function disposeWebAROrgan() {
-            if (!webArOrganClone) return;
-            webArOrganClone.traverse(object => {
-                if (object.geometry?.dispose) object.geometry.dispose();
-                if (object.material) {
-                    const materials = Array.isArray(object.material) ? object.material : [object.material];
-                    materials.forEach(material => material?.dispose?.());
-                }
-            });
-            webArAnchor?.group?.remove(webArOrganClone);
+            if (webArOrganClone) {
+                webArOrganClone.traverse(object => {
+                    if (object.geometry?.dispose) object.geometry.dispose();
+                    if (object.material) {
+                        const materials = Array.isArray(object.material) ? object.material : [object.material];
+                        materials.forEach(material => material?.dispose?.());
+                    }
+                });
+                webArAnchor?.group?.remove(webArOrganClone);
+            }
             webArOrganClone = null;
             webArPartMeshes = [];
         }
@@ -1414,6 +1430,45 @@
             webArOrganClone.rotation.set(0.08, -0.18, 0);
             webArOrganClone.scale.setScalar(webArScale);
             webArAnchor.group.add(webArOrganClone);
+        }
+
+        function activateWebARTarget(target, anchor) {
+            const anchorChanged = webArAnchor !== anchor;
+            if (anchorChanged) {
+                // Cada marcador possui uma âncora própria. Apenas um modelo fica ativo
+                // por vez porque a sessão utiliza maxTrack: 1.
+                disposeWebAROrgan();
+                webArAnchor = anchor;
+                webArActiveTargetKey = target.key;
+                webArScale = 0.42;
+                webArPointers.clear();
+                selectOrgan(target.key);
+            } else if (currentOrganKey !== target.key) {
+                // Ao reencontrar o marcador, restaura o órgão correspondente a ele.
+                webArActiveTargetKey = target.key;
+                webArScale = 0.42;
+                selectOrgan(target.key);
+            } else if (!webArOrganClone) {
+                webArActiveTargetKey = target.key;
+                buildWebAROrgan(target.key);
+            }
+
+            webArActiveTargetKey = target.key;
+            webArTargetVisible = true;
+            setWebARStatus('✅ Marcador ' + target.marker + ' reconhecido: ' + target.name +
+                ' 3D visível! Use os controles do Atlas, arraste para girar e faça pinça para ampliar.');
+        }
+
+        function loseWebARTarget(target, anchor) {
+            // Um evento de perda antigo não pode sobrescrever o estado de outro marcador
+            // que já tenha sido reconhecido na mesma sessão.
+            if (webArAnchor !== anchor || webArActiveTargetKey !== target.key) return;
+            webArTargetVisible = false;
+            hotspotsDOM.forEach(hotspot => {
+                hotspot.element.style.display = 'none';
+            });
+            setWebARStatus('Marcador ' + target.marker + ' (' + target.name +
+                ') fora da câmera. Reposicione a imagem para continuar.');
         }
 
         async function resolveWebARTarget() {
@@ -1505,20 +1560,24 @@
                 arRimLight.position.set(-4, -3, -2);
                 arScene.add(arRimLight);
 
-                webArAnchor = webArInstance.addAnchor(0);
-                if (!webArScale || webArScale === 0.42) webArScale = 0.42;
-                buildWebAROrgan(currentOrganKey);
+                webArAnchors = {};
+                webArAnchor = null;
+                webArActiveTargetKey = null;
+                webArTargetVisible = false;
+                webArOrganClone = null;
+                webArPartMeshes = [];
+                webArScale = 0.42;
 
-                webArAnchor.onTargetFound = () => {
-                    setWebARStatus('✅ ' + ORGANS_DATA[currentOrganKey].name + ' 3D visível! Use os controles do Atlas, arraste para girar e faça pinça para ampliar.');
-                };
-                webArAnchor.onTargetLost = () => {
-                    setWebARStatus('Marcador fora da câmera. Reposicione o A1 para continuar a interação.');
-                };
+                WEB_AR_TARGETS.forEach(target => {
+                    const anchor = webArInstance.addAnchor(target.index);
+                    webArAnchors[target.key] = anchor;
+                    anchor.onTargetFound = () => activateWebARTarget(target, anchor);
+                    anchor.onTargetLost = () => loseWebARTarget(target, anchor);
+                });
 
                 await webArInstance.start();
                 webArStarted = true;
-                setWebARStatus('Câmera ativa. Aponte para o marcador A1 impresso em 14 × 14 cm.');
+                setWebARStatus('Câmera ativa. Aponte para um dos quatro marcadores: A1 coração, A2 cérebro, A3 pulmões ou A4 sistema digestório (14 × 14 cm).');
 
                 // Interação direta com o modelo ancorado: arraste para girar,
                 // pinça para mudar a escala. Isso não altera o Atlas 3D de fundo.
@@ -1663,7 +1722,7 @@
                     badge: "⚠️",
                     system: "RA pelo navegador",
                     title: "Não foi possível iniciar a realidade aumentada",
-                    description: error?.message || "Verifique a permissão da câmera, a conexão HTTPS e se o arquivo targets.mind está publicado em public/ar-markers.",
+                    description: error?.message || "Verifique a permissão da câmera, a conexão HTTPS e se o banco com os quatro marcadores targets.mind está publicado em public/ar-markers.",
                     funFact: "O Atlas 3D continua disponível. No APK, a modalidade nativa continua independente.",
                     color: "#f59e0b"
                 });
@@ -1697,6 +1756,9 @@
             webArInstance = null;
             webArOrganClone = null;
             webArAnchor = null;
+            webArAnchors = {};
+            webArActiveTargetKey = null;
+            webArTargetVisible = false;
             webArThree = null;
             webArPartMeshes = [];
             webArStarted = false;
