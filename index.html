@@ -118,7 +118,7 @@
             position: fixed;
             inset: 0;
             z-index: 80;
-            background: #020617;
+            background: transparent;
         }
         #web-ar-container {
             position: absolute;
@@ -126,14 +126,19 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            background: transparent;
         }
-        #web-ar-container video,
+        /* Não sobrescrever o tamanho/recorte do vídeo: o MindAR calcula
+           essas dimensões para manter a câmera alinhada ao rastreamento. */
+        #web-ar-container video {
+            position: absolute !important;
+            max-width: none !important;
+        }
         #web-ar-container canvas {
             position: absolute !important;
             inset: 0 !important;
             width: 100% !important;
             height: 100% !important;
-            object-fit: cover;
         }
         #web-ar-status {
             position: absolute;
@@ -1451,10 +1456,17 @@
         async function stopWebMarkerScanner() {
             if (webArInstance) {
                 try {
-                    webArInstance.renderer.setAnimationLoop(null);
-                    if (webArStarted) await webArInstance.stop();
+                    webArInstance.renderer?.setAnimationLoop(null);
+                    if (webArInstance.controller) webArInstance.stop();
                 } catch (error) {
                     console.warn('Falha ao encerrar a sessão MindAR:', error);
+                } finally {
+                    // Também encerra a câmera caso o scanner falhe durante a inicialização.
+                    const tracks = webArInstance.video?.srcObject?.getTracks?.() || [];
+                    tracks.forEach(track => track.stop());
+                    webArInstance.video?.remove();
+                    webArInstance.renderer?.dispose?.();
+                    webArInstance.cssRenderer?.domElement?.remove();
                 }
             }
             webArInstance = null;
