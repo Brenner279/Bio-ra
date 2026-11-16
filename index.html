@@ -1536,8 +1536,12 @@
                     uiScanning: 'no',
                     uiError: 'no',
                     maxTrack: 1,
+                    // Filtragem mais conservadora para reduzir oscilações do marcador.
+                    // Beta menor faz o One Euro Filter reagir menos ao ruído entre quadros.
                     filterMinCF: 0.0001,
-                    filterBeta: 1000
+                    filterBeta: 10,
+                    warmupTolerance: 7,
+                    missTolerance: 7
                 });
 
                 // MindAR inclui sua própria versão do Three.js. Os objetos da cena
@@ -1545,6 +1549,10 @@
                 const ARTHREE = window.MINDAR.IMAGE.THREE;
                 webArThree = ARTHREE;
                 const { renderer: arRenderer, scene: arScene, camera: arCamera } = webArInstance;
+
+                // Limita a resolução interna em celulares com telas de alta densidade.
+                // Isso reduz a carga de renderização e ajuda a manter quadros mais regulares.
+                arRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
                 // Reproduz a iluminação do Atlas comum para manter a saturação das cores.
                 arRenderer.outputEncoding = ARTHREE.sRGBEncoding;
