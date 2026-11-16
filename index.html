@@ -235,7 +235,7 @@
         <!-- Botões de Ação Rápida no Topo -->
         <div class="flex items-center gap-2">
             <!-- Scanner nativo ARCore -->
-            <button id="btn-arcore" onclick="startMarkerScanner()" class="cartoon-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm" title="Abrir ou fechar realidade aumentada pelo marcador">
+            <button id="btn-arcore" onclick="startMarkerScanner()" class="cartoon-btn bg-emerald-400 hover:bg-emerald-300 text-slate-900 font-extrabold px-3 py-2 rounded-xl flex items-center gap-1.5 text-xs sm:text-sm" title="Abrir ou fechar realidade aumentada pelos quatro marcadores">
                 <i class="ph-bold ph-scan text-lg"></i>
                 <span class="hidden sm:inline">Modo RA</span>
             </button>
@@ -1782,71 +1782,27 @@
         }
 
         async function startMarkerScanner() {
-            const nativePlugin = window.Capacitor?.Plugins?.BioARCore;
-            const isNativeApp = Boolean(window.Capacitor?.isNativePlatform?.());
-
-            // O botão funciona como alternância para abrir/fechar a sessão web.
-            if (!isNativeApp && webArStarted) {
+            // O APK e o navegador usam o mesmo renderizador MindAR/Three.js.
+            // No Android, a biblioteca e o banco targets.mind são empacotados localmente,
+            // mantendo o scanner funcional sem conexão com a internet.
+            if (webArStarted) {
                 await stopWebMarkerScanner();
                 return;
             }
 
-            // No Chrome/GitHub Pages, o marcador é rastreado pelo MindAR.
-            if (!isNativeApp) {
-                await startWebMarkerScanner();
-                return;
-            }
-            if (!nativePlugin?.startMarkerScanner) {
+            if (!window.MINDAR?.IMAGE?.MindARThree) {
                 updateInfoCard({
                     badge: "⚠️",
-                    system: "Realidade Aumentada • ARCore",
-                    title: "Scanner nativo indisponível",
-                    description: "Este APK não encontrou o plugin ARCore. Atualize para a compilação Android mais recente.",
-                    funFact: "O modo RA pelo navegador é independente e funciona pelo GitHub Pages.",
+                    system: "Realidade Aumentada",
+                    title: "Biblioteca de RA indisponível",
+                    description: "Não foi possível carregar o rastreador MindAR. No APK, confira se esta versão foi instalada por completo; no navegador, verifique a conexão.",
+                    funFact: "O Atlas 3D normal continua disponível.",
                     color: "#f59e0b"
                 });
                 return;
             }
 
-            if (mediaStream) {
-                mediaStream.getTracks().forEach(track => track.stop());
-                mediaStream = null;
-                document.getElementById('camera-stream').classList.add('hidden');
-                document.getElementById('camera-btn-text').innerText = "Usar Câmera Real";
-            }
-
-            try {
-                const result = await nativePlugin.startMarkerScanner();
-                if (result?.recognized && result?.markerId === "heart") {
-                    selectOrgan("heart");
-                    updateInfoCard({
-                        badge: "❤️",
-                        system: "ARCore • Marcador A1",
-                        title: "Marcador do coração reconhecido",
-                        description: "O Galaxy identificou o marcador A1 por meio do rastreamento de imagens do ARCore. Nesta etapa validamos a leitura; o modelo 3D ancorado será integrado na próxima etapa.",
-                        funFact: "Reconhecimento processado no aparelho. A imagem de referência está empacotada no APK.",
-                        color: "#10b981"
-                    });
-                } else {
-                    updateInfoCard({
-                        badge: "🔎",
-                        system: "ARCore • Marcador A1",
-                        title: "Marcador não confirmado",
-                        description: "Tente novamente com a folha plana, boa iluminação e o cartão inteiro visível. Não incline nem estique a impressão.",
-                        funFact: "Imprima o marcador A1 em 14 × 14 cm, sem cortar a moldura.",
-                        color: "#0ea5e9"
-                    });
-                }
-            } catch (error) {
-                updateInfoCard({
-                    badge: "⚠️",
-                    system: "ARCore • Diagnóstico",
-                    title: "Não foi possível iniciar o scanner",
-                    description: error?.message || "Verifique a permissão da câmera e se o Google Play Services para RA está atualizado.",
-                    funFact: "O Atlas 3D permanece disponível mesmo quando o ARCore não pode ser iniciado.",
-                    color: "#f59e0b"
-                });
-            }
+            await startWebMarkerScanner();
         }
 
         async function toggleCamera() {
