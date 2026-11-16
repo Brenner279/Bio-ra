@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -20,7 +20,8 @@ const onlineResources = `    <!-- Tailwind CSS -->
 
 const offlineResources = `    <!-- Recursos locais: incluídos no APK, sem CDN -->
     <link rel="stylesheet" href="./src/styles.css">
-    <script src="/vendor/three.min.js"></script>`;
+    <script src="/vendor/three.min.js"></script>
+    <script src="/vendor/mindar-image-three.prod.js"></script>`;
 
 let html = await readFile(sourceHtml, 'utf8');
 if (!html.includes(onlineResources)) {
@@ -43,11 +44,16 @@ for (const url of prohibited) {
 await rm(buildRoot, { recursive: true, force: true });
 await mkdir(path.join(buildRoot, 'src'), { recursive: true });
 await mkdir(path.join(buildRoot, 'public', 'vendor'), { recursive: true });
-await mkdir(path.join(buildRoot, 'public', 'ar-markers'), { recursive: true });
-await copyFile(
-  path.join(root, 'public', 'ar-markers', 'heart-marker.png'),
-  path.join(buildRoot, 'public', 'ar-markers', 'heart-marker.png')
-);
+const markerSourceDir = path.join(root, 'public', 'ar-markers');
+const markerTargetDir = path.join(buildRoot, 'public', 'ar-markers');
+await mkdir(markerTargetDir, { recursive: true });
+for (const entry of await readdir(markerSourceDir, { withFileTypes: true })) {
+  if (!entry.isFile()) continue;
+  await copyFile(
+    path.join(markerSourceDir, entry.name),
+    path.join(markerTargetDir, entry.name)
+  );
+}
 await writeFile(path.join(buildRoot, 'index.html'), html, 'utf8');
 await copyFile(sourceCss, path.join(buildRoot, 'src', 'styles.css'));
 console.log('Fonte isolada para o APK offline criada em .offline-build.');
