@@ -21,9 +21,13 @@ O workflow configura a permissão de câmera e remove a permissão de internet d
 
 A narração usa a voz de síntese de fala instalada no Android. O BioAR seleciona somente uma voz marcada pelo sistema como local e em português. Para ouvir sem internet, instale previamente uma voz de português (Brasil) offline nas configurações de Texto para fala do aparelho. Se não houver uma voz local compatível, o BioAR informa isso e não tenta usar uma voz online.
 
-### Câmera
+### Realidade aumentada pelo navegador
 
-A câmera é opcional e depende da permissão concedida pelo Android. Ela mostra a imagem da câmera traseira como fundo; esta versão ainda não inclui rastreamento ARCore de marcadores ou superfícies.
+No GitHub Pages, o botão **Modo RA** abre o rastreador de imagens MindAR (Three.js). O alvo A1 está compilado em `public/ar-markers/targets.mind`; quando reconhecido, o coração 3D é ancorado à imagem. O acesso exige HTTPS, permissão de câmera e conexão para carregar a biblioteca MindAR pela CDN. Use o Chrome atualizado e a mesma imagem A1 utilizada na compilação do alvo.
+
+### Realidade aumentada no APK
+
+O aplicativo Android mantém o caminho nativo com ARCore Augmented Images e o marcador PNG empacotado em `assets/ar_markers/heart-marker.png`. O MindAR web é removido durante a preparação offline; o APK continua sem permissão de internet.
 
 ## Gerar o APK pelo GitHub
 
